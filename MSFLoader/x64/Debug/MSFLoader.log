@@ -1,0 +1,6 @@
+﻿  loader.cpp
+C:\Users\lemur\source\repos\MSFLoader\MSFLoader\loader.cpp(73,22): warning C4018: '<': signed/unsigned mismatch
+C:\Users\lemur\source\repos\MSFLoader\MSFLoader\loader.cpp(112,59): warning C4305: 'argument': truncation from 'unsigned int' to 'BOOLEAN'
+C:\Users\lemur\source\repos\MSFLoader\MSFLoader\loader.cpp(112,59): warning C4309: 'argument': truncation of constant value
+C:\Users\lemur\source\repos\MSFLoader\MSFLoader\loader.cpp(83): warning C4715: 'GetSymbolAddress': not all control paths return a value
+  MSFLoader.vcxproj -> C:\Users\lemur\source\repos\MSFLoader\x64\Debug\MSFLoader.exe
