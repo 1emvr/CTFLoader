@@ -1,9 +1,8 @@
-#include <monolith.hpp>
-#include <definitions.hpp>
-#include <multitool.hpp>
-#include <cstdint>
+#include "monolith.hpp"
+#include "definitions.hpp"
+#include "multitool.hpp"
 
-#include "resource.h"
+#include <cstdint>
 
 #define FVN_OFFSET		(const unsigned int) 2166136261
 #define FVN_PRIME		(const unsigned int) 16777619
