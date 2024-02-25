@@ -7,11 +7,12 @@
 #include <locale>
 #include <codecvt>
 #include <stdio.h>
-#include <string>
+#include <cstring>
 
 
-#define FNV_OFFSET_BASIS	    (const unsigned int) 2166136261
-#define FNV_PRIME				(const unsigned int) 16777619
+#define FNV_OFFSET_BASIS	(const unsigned int) 2166136261
+#define FNV_PRIME		(const unsigned int) 16777619
+
 
 int main(int argc, char** argv) {
 
