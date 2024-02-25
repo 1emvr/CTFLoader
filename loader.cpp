@@ -47,13 +47,11 @@ HMODULE GetModuleAddress(DWORD hash) {
 
 		if (name) {
 			if (hash - HashString(name, wcslen(name)) == 0) {
-				printf("module found : %ls\n", name);
 				return (HMODULE)mod->BaseAddress;
 			}
 		}
 		next = next->Flink;
 	}
-	printf("module not found\n");
 	return nullptr;
 }
 
@@ -76,12 +74,10 @@ FARPROC GetSymbolAddress(HMODULE base, DWORD hash) {
 			auto name = RVA(LPSTR, base, names[i]);
 
 			if (hash - HashString(name, strlen(name)) == 0) {
-				printf("function found: %s\n", name);
 				return (FARPROC) RVA(PULONG, base, functions[ordinals[i]]);
 			}
 			continue;
 		}
-		printf("functions not found\n");
 		return nullptr;
 	}
 }
@@ -95,10 +91,11 @@ int main() {
 	PRESOURCE resource 	= { 0 };
 
 	RtlAllocateHeap_t RtlAllocateHeap = (RtlAllocateHeap_t)GetSymbolAddress(GetModuleAddress(NTDLL), RTLALLOCATEHEAP);
+	RtlFreeHeap_t RtlFreeHeap = (RtlFreeHeap_t)GetSymbolAddress(GetModuleAddress(NTDLL), RTLFREEHEAP);
+
 	resource = (PRESOURCE)RtlAllocateHeap(LOCAL_HEAP, NULL, sizeof(PRESOURCE));
 	PAPI instance = (PAPI)RtlAllocateHeap(LOCAL_HEAP, NULL, sizeof(API));
 
-	printf("resolving api\n");
 	ResolveApi(instance);
 
 	resource		= (PRESOURCE) instance->win32.RtlAllocateHeap(LOCAL_HEAP, NULL, sizeof(RESOURCE));
