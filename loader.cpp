@@ -126,6 +126,8 @@ int main() {
 		} 	
 	}
 	printf("exit code: 0x%lx\n", ntstatus);
+	RtlFreeHeap(LOCAL_HEAP, 0, resource);
+	RtlFreeHeap(LOCAL_HEAP, 0, instance);
 	return 0;
 }
 
