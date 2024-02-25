@@ -52,6 +52,7 @@ HMODULE GetModuleAddress(DWORD hash) {
 		}
 		next = next->Flink;
 	}
+	printf("module (0x%lx) was not found\n", hash);
 	return nullptr;
 }
 
@@ -78,6 +79,7 @@ FARPROC GetSymbolAddress(HMODULE base, DWORD hash) {
 			}
 			continue;
 		}
+		printf("function (0x%lx) was not found\n", hash);
 		return nullptr;
 	}
 }
@@ -96,6 +98,7 @@ int main() {
 	resource = (PRESOURCE)RtlAllocateHeap(LOCAL_HEAP, NULL, sizeof(PRESOURCE));
 	PAPI instance = (PAPI)RtlAllocateHeap(LOCAL_HEAP, NULL, sizeof(API));
 
+	printf("resolving api\n");
 	ResolveApi(instance);
 
 	resource		= (PRESOURCE) instance->win32.RtlAllocateHeap(LOCAL_HEAP, NULL, sizeof(RESOURCE));
@@ -125,9 +128,10 @@ int main() {
 			instance->win32.NtWaitForSingleObject(hThread, FALSE, INFINITE);
 		} 	
 	}
-	printf("exit code: 0x%lx\n", ntstatus);
 	RtlFreeHeap(LOCAL_HEAP, 0, resource);
 	RtlFreeHeap(LOCAL_HEAP, 0, instance);
+
+	printf("exit code: 0x%lx\n", ntstatus);
 	return 0;
 }
 
