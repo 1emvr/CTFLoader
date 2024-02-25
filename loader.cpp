@@ -84,13 +84,14 @@ FARPROC GetSymbolAddress(HMODULE base, DWORD hash) {
 
 int main() {
 
-	HANDLE hThread;
-	DWORD protect;
-	LPVOID lpBuffer;
-	NTSTATUS ntstatus;
+	HANDLE hThread 		= { 0 };
+	DWORD protect 		= { 0 };
+	LPVOID lpBuffer 	= { 0 };
+	NTSTATUS ntstatus 	= { 0 };
+	PRESOURCE resource 	= { 0 };
 
 	RtlAllocateHeap_t RtlAllocateHeap = (RtlAllocateHeap_t)GetSymbolAddress(GetModuleAddress(NTDLL), RTLALLOCATEHEAP);
-	PRESOURCE resource = (PRESOURCE)RtlAllocateHeap(LOCAL_HEAP, NULL, sizeof(PRESOURCE));
+	resource = (PRESOURCE)RtlAllocateHeap(LOCAL_HEAP, NULL, sizeof(PRESOURCE));
 	PAPI instance = (PAPI)RtlAllocateHeap(LOCAL_HEAP, NULL, sizeof(API));
 
 	printf("resolving api\n");
