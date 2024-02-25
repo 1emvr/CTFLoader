@@ -18,7 +18,10 @@
     <ClCompile Include="loader.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\..\..\Github\hexane-server\src\core\multitool.cpp">
+    <ClCompile Include="..\..\hexane-server\src\core\multitool.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\hexane-server\test\hash_test.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
@@ -33,6 +36,8 @@
     </ResourceCompile>
   </ItemGroup>
   <ItemGroup>
-    <None Include="..\..\..\..\Downloads\meterpreter.dat" />
+    <None Include="..\meterpreter.bin">
+      <Filter>Resource Files</Filter>
+    </None>
   </ItemGroup>
 </Project>
