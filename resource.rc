@@ -1,2 +1,2 @@
 #define SHELLCODE 101
-SHELLCODE BINARY "meterpreter.bin"
+SHELLCODE RCDATA "xor.bin"
